@@ -71,6 +71,10 @@ const recevier=(dat)=>{
     console.log(username,socket.id);
     if(userexist(username,socket.id,)){
         //code to disconnect user.
+        console.log("user already present");
+        const err = new Error("not authorized");
+        err.data = { content: "Please retry later" };
+        return next(err);
     }
     
     socket.username=username;
