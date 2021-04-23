@@ -29,12 +29,12 @@ const userexist=(username,id)=>{
                     flag=1;
                     return false;  
                 }
-                return true
+                return true;
             }
             
         }
     }
-    users.push({name:username,id:id,online:true});
+    users.push({name:username,id:id,online:true,isGroup:false});
     return false
 }
 const online=()=>{
@@ -74,7 +74,7 @@ const recevier=(dat)=>{
         console.log("user already present");
         const err = new Error("not authorized");
         err.data = { content: "Please retry later" };
-        return next(err);
+        return next(err);           
     }
     
     socket.username=username;
@@ -101,6 +101,39 @@ const recevier=(dat)=>{
         console.log("client:",content,sender);
         let to=recevier(sender);
         socket.to(to).emit('private-message',content,socket.username);
+    });
+    socket.on('group-message',(content,sender)=>{
+        // console.log("Message recieved group");
+        // console.log("client:",content,sender,socket.username);
+        socket.to(sender).emit('group-message',content,sender,socket.username);
+    });
+    socket.on('new-group-list',(name,datalist)=>{
+        let flag=0;
+        for(let i=0;i<users.length;i++){
+            if(users[i].name==name){
+                flag=1;
+                break;
+            }}
+            if(flag){
+              socket.emit("error","Name Already in use");  
+            }else{
+                console.log(`Group name:${name} and list${datalist}`);
+                socket.join(name);
+                datalist.forEach(element => {
+                    let to=recevier(element);
+                    socket.to(to).emit('new-group-req',name);
+            })
+            socket.emit("room-joined",name);
+        };
+
+            // socket.to(datalist).emit('new-group-req',name);            
+        
+
+    });
+    socket.on('new-group',dat=>{
+        socket.join(dat);
+        console.log("joined");
+        socket.emit('room-joined',dat);
     })
      socket.on('disconnect',()=>{
         socket.broadcast.emit('offline',socket.username);
