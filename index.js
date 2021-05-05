@@ -1,3 +1,5 @@
+const { Console } = require("console");
+
 const app=require("express")();
 const server=require("http").createServer(app);
 const io=require("socket.io")(server,{
@@ -34,7 +36,7 @@ const userexist=(username,id)=>{
             
         }
     }
-    users.push({name:username,id:id,online:true,isGroup:false});
+    users.push({name:username,id:id,online:true,isGroup:false,group:[]});
     return false
 }
 const online=()=>{
@@ -52,6 +54,35 @@ const offline=(username)=>{
             users[i].online=false;
             users[i].id=null;
             break;
+        }
+    }
+}
+const usergroupadded=(dat,username)=>{
+    for(let i=0;i<users.length;i++){
+        if(users[i].name==username){   
+            users[i].group.push(dat);
+        }
+    }
+}
+const usergrouplist=(username)=>{
+    let k=[];
+    for(let i=0;i<users.length;i++){
+        if(users[i].name==username){   
+            k=users[i].group;
+            users[i].group=[];
+            return k;
+        }
+    }
+}
+const usergroupleft=(dat,username)=>{
+    for(let i=0;i<users.length;i++){
+        if(users[i].name==username){   
+            for(let j=0;j<users[i].group.length;j++){
+                if(users[i].group[j]==dat){
+                    users[i].group.splice(j,1);
+                    j--;
+                }
+            }
         }
     }
 }
@@ -76,7 +107,7 @@ const recevier=(dat)=>{
         err.data = { content: "Please retry later" };
         return next(err);           
     }
-    
+// });
     socket.username=username;
     next();
  })
@@ -108,6 +139,7 @@ const recevier=(dat)=>{
         socket.to(sender).emit('group-message',content,sender,socket.username);
     });
     socket.on('new-group-list',(name,datalist)=>{
+        
         let flag=0;
         for(let i=0;i<users.length;i++){
             if(users[i].name==name){
@@ -119,28 +151,84 @@ const recevier=(dat)=>{
             }else{
                 console.log(`Group name:${name} and list${datalist}`);
                 socket.join(name);
+                usergroupadded(name,socket.username);
+                let tlist=datalist.slice();
+                tlist.push(socket.username);
                 datalist.forEach(element => {
                     let to=recevier(element);
-                    socket.to(to).emit('new-group-req',name);
+                    socket.to(to).emit('new-group-req',name,tlist);
             })
-            socket.emit("room-joined",name);
+            socket.emit("room-joined",name,tlist);
         };
 
             // socket.to(datalist).emit('new-group-req',name);            
         
 
     });
-    socket.on('new-group',dat=>{
+    socket.on('new-group',(dat,l)=>{
+        usergroupadded(dat,socket.username);
         socket.join(dat);
         console.log("joined");
-        socket.emit('room-joined',dat);
+        socket.emit('room-joined',dat,l);
+    });
+    socket.on('add-to-group',(name,glist,tlist)=>{
+        tlist.push(...glist);
+        console.log("tlist::",tlist);
+        glist.forEach(element => {
+            let to=recevier(element);
+            socket.to(to).emit('new-group-req',name,tlist);
+    });
+    socket.to(name).emit('group-user-added',name,glist);
+    socket.emit('group-user-added',name,glist);
+    });
+    //
+    socket.on('remove-from-group',(name,glist,tlist)=>{
+        glist.forEach(element=>{
+            for(var i=0;i<tlist.length;i++){
+                if(element==tlist[i]){
+                    tlist.splice(i,1);
+                    i--;
+                }
+            }
+        })     
+        console.log("tlist:",tlist,"glist:",glist,"name:",name);
+        glist.forEach(element => {
+            let to=recevier(element);
+            socket.to(to).emit('remove-from-group-req',name);
+    });
+    socket.to(name).emit('user-left',name,tlist);
+    socket.emit('user-left',name,tlist);
+    });
+    socket.on('leave-from-group',(name,glist,tlist)=>{
+        glist.forEach(element=>{
+            for(var i=0;i<tlist.length;i++){
+                if(element==tlist[i]){
+                    tlist.splice(i,1);
+                    i--;
+                }
+            }
+        })     
+        console.log("tlist:",tlist,"glist:",glist,"name:",name);
+            socket.emit('remove-from-group-req',name);
+            socket.to(name).emit('user-left',name,tlist);
+    });
+    socket.on('leave-group',(name)=>{
+        console.log("leave-group:",name);
+        usergroupleft(name,socket.username);
+        socket.leave(name);
     })
+    //
      socket.on('disconnect',()=>{
+         let g=usergrouplist(socket.username);
+         g.forEach(element => {
+            socket.to(element).emit('group-exit',element,socket.username); 
+            socket.leave(element);
+         });
         socket.broadcast.emit('offline',socket.username);
         offline(socket.username);
         console.log("users offlinelist:",users);
         console.log("user disconnected");
-    })
+    });
  });
  server.listen(3001,()=>{
      console.log("listeing on 3001");
